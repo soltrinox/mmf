@@ -1,6 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import os
 import pickle
+import re
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
@@ -20,6 +22,12 @@ from omegaconf import MISSING, OmegaConf
 from torch import nn
 from transformers.configuration_auto import AutoConfig
 from transformers.modeling_auto import AutoModel
+
+
+try:
+    from detectron2.modeling import ShapeSpec, build_resnet_backbone
+except ImportError:
+    pass
 
 
 class Encoder(nn.Module):
@@ -173,6 +181,9 @@ class ImageEncoderFactory(EncoderFactory):
             self.module.out_dim = params.in_dim
         elif self._type == "resnet152":
             self.module = ResNet152ImageEncoder(params)
+        elif self._type == "resnet":
+            self.module = ResNetEncoder(params)
+
         else:
             raise NotImplementedError("Unknown Image Encoder: %s" % self._type)
 
@@ -228,6 +239,50 @@ class ResNet152ImageEncoder(Encoder):
         out = torch.flatten(out, start_dim=2)
         out = out.transpose(1, 2).contiguous()
         return out  # BxNx2048
+
+
+@registry.register_encoder("resnet")
+class ResNetEncoder(Encoder):
+    @dataclass
+    class Config(Encoder.Config):
+        name: str = "resnet"
+        backbone: str = None
+        pretrained: bool = True
+        pretrained_path: str = None
+
+    def __init__(self, config: Config, *args, **kwargs):
+        super().__init__()
+        self.config = config
+        pretrained = config.get("pretrained", False)
+        pretrained_path = config.get("pretrained_path", None)
+        backbone = config.get("backbone", None)
+
+        if backbone == "resnet50":
+            self.resnet = torchvision.models.resnet50(pretrained=pretrained, **kwargs)
+        elif backbone == "resnet101":
+            self.resnet = torchvision.models.resnet101(pretrained=pretrained, **kwargs)
+        elif backbone == "resnet152":
+            self.resnet = torchvision.models.resnet152(pretrained=pretrained, **kwargs)
+        elif backbone == "d2_resnet":
+            self.resnet = build_resnet_backbone(config, ShapeSpec(channels=3))
+
+            if pretrained:
+                state_dict = torch.load(pretrained_path)
+                new_state_dict = OrderedDict()
+                replace_layer = {"backbone.": ""}
+
+                for key, value in state_dict["model"].items():
+                    new_key = re.sub(
+                        r"(backbone\.)", lambda x: replace_layer[x.groups()[0]], key
+                    )
+                    new_state_dict[new_key] = value
+                self.resnet.load_state_dict(new_state_dict, strict=False)
+
+        self.out_dim = 2048
+
+    def forward(self, x):
+        x = self.resnet(x)
+        return x["res5"]
 
 
 class TextEncoderTypes(Enum):

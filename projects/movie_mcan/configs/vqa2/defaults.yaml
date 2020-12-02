@@ -12,13 +12,13 @@ dataset_config:
       - vqa2.grid_features
     features:
       train:
-      - vqa2/grid_features/features
-      - vqa2/grid_features/features
-      - vqa2/grid_features/features
+      - /checkpoint/vedanuj/features
+      - /checkpoint/vedanuj/features
+      - /checkpoint/vedanuj/features
       val:
-      - vqa2/grid_features/features
+      - /checkpoint/vedanuj/features
       test:
-      - vqa2/grid_features/features
+      - /checkpoint/vedanuj/features
     annotations:
       train:
       - vqa2/grid_features/annotations/imdb_train2014.npy
